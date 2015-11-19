@@ -1,7 +1,7 @@
 module.exports.startSocket = function(opts){
 	// Socket Part
 	var http = require("http"),
-		port = process.env.PORT || 5000,
+		port = 5000,//process.env.PORT || 5000,
 		server = http.createServer(opts.app);
 	
 	server.listen(port);
