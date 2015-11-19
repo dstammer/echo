@@ -6,9 +6,7 @@ var express = require("express"),
 	config= require("./config.js"),
 	socket = require("./socket.js");
 
-var app       = express(),
-    secretKey = "hJKQg7dxMGzEWqf",
-    templatesDir = path.join(__dirname, "emails");
+var app       = express();
 
 var models = null;
 

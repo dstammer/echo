@@ -1,5 +1,4 @@
-var validator = require('validator'),
-    async = require('async');
+var async = require('async');
 
 module.exports = function (opts) {
     var socialModel = opts.models.Social,
