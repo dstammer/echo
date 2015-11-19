@@ -3,22 +3,7 @@ var fs = require('fs'),
     path = require('path'),
 	hat = require('hat'),
     async = require('async'),
-	cloudinary = require('cloudinary'),
 	express = require('express');
-
-module.exports.uploadFile = function(req, callback){
-	function getFileExtension(filename){
-		return filename.split('.').pop();
-	}
-
-	cloudinary.config(config.cloudinary);
-
-	stream = cloudinary.uploader.upload_stream(function(result) {
-		console.log(result);
-		callback(null, result.url);
-	}, { public_id: req.body.title } );
-	fs.createReadStream(req.files.logo.path, {encoding: 'binary'}).on('data', stream.write).on('end', stream.end);
-}
 
 module.exports.loadMiddlewares = function (opts, cb) {
     var options = opts || {},

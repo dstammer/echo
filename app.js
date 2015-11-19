@@ -2,10 +2,8 @@ var express = require("express"),
     config  = require("./config.js"),
     utils   = require("./utils.js"),
     async = require("async"),
-    redisStore = require('connect-redis')(express),
     path = require('path'),
 	config= require("./config.js"),
-    encryption = require("./utils.js").encryption,
 	socket = require("./socket.js");
 
 var app       = express(),
