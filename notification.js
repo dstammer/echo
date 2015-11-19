@@ -8,10 +8,13 @@ module.exports = {
 	send : function(token, message, badge, payload, callback){
 		
 		var options = {
-			cert : "./push/devcert.pem",
-			key : "./push/devkey.pem",
+//			cert : "./push/devcert.pem",
+//			key : "./push/devkey.pem",
+			cert : "./push/prodcert.pem",
+			key : "./push/prodkey.pem",
 			passphrase : "password",
-			production : false,
+//			production : false,
+			production: true,
 			errorCallback: yes,
 			enhanced: true,
 //			"batchFeedback": true,
