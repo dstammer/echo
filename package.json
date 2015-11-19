@@ -1,5 +1,5 @@
 {
-  "name": "taskflight",
+  "name": "Echo",
   "version": "0.0.1",
   "description": "Echo Project",
   "main": "app.js",
@@ -43,7 +43,7 @@
     "walk": "^2.3.9",
     "ws": "^0.4.0"
   },
-  "engine": "node 0.12.1",
+  "engines": "node 0.12.1",
   "devDependencies": {
     "grunt": "^0.4.5",
     "grunt-contrib-concat": "^0.5.1",
