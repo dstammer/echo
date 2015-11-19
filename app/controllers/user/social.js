@@ -2,7 +2,9 @@ var validator = require('validator'),
     async = require('async');
 
 module.exports = function (opts) {
-    var socialModel = opts.models.Social;
+    var socialModel = opts.models.Social,
+		requestModel = opts.models.Request,
+		echoModel = opts.models.Echo;
         
     return {
         "post#social/create" : function (req, res) {
@@ -32,7 +34,7 @@ module.exports = function (opts) {
 				social.name = name;
 				social.photo_url = photo;
 				social.location = "";
-				social.device_token = "";
+				social.device_token = device_token;
 
 				social.save(function (err, social) {
 					if (err) {
@@ -42,6 +44,22 @@ module.exports = function (opts) {
 						return res.json({ success : true });
 					}
 				});
+            });
+        },
+
+		"post#social/ping" : function (req, res) {
+            var social_id = req.body.social_id,
+				provider = req.body.provider;
+                            
+			var query = socialModel.findOne({$and : [{social_id: social_id}, {provider: provider}]});
+            query.exec(function (err, social) {
+				if(err){
+					return res.json({success : false});
+				} else if (social) {
+					return res.json({success : true, exist: true});
+                }
+
+				return res.json({success : true, exist : false})
             });
         },
 
@@ -86,6 +104,18 @@ module.exports = function (opts) {
             });
         },
 
+		"get#echo/text" : function(req, res){
+			var social_id = req.query.id,
+				provider = req.query.provider;
+
+			requestModel.find({$or: [{'to_id': social_id}, {'from_id' : social_id}]}).sort({timestamp: -1}).exec(
+				function(err,result) {
+					console.log(err);
+				    res.json(result);
+				}
+			);
+		},
+
 		"post#echo/get" : function (req, res) {
             var social_id = req.body.id,
 				provider = req.body.provider;
@@ -115,16 +145,201 @@ module.exports = function (opts) {
 								echo.provider = s.provider;
 								echo.photo_url = s.photo_url;
 								echo.name = s.name;
+								echo.request = false;
 								echos.push(echo);
 							}
 						}
-						return res.json({success: true, echos: echos});
+
+						requestModel.find({$or: [{'to_id': social_id}, {'from_id' : social_id}]}).sort({timestamp: 1}).exec(
+							function(err,result) {
+								var req = [];
+								if(result){
+									for(var i = 0; i < result.length; i++){
+										var friend_id = "";
+										if(result[i].from_id == social_id){
+											friend_id = result[i].to_id;
+										} else {
+											friend_id = result[i].from_id;
+										}
+
+										for(var j = 0; j < friends.length; j++){
+											if(!req[j]) req[j] = {};
+											if(friend_id == friends[j].social_id){
+												if(result[i].type == "1" && result[i].to_id == social_id){
+													req[j].social_id = friends[j].social_id;
+													req[j].provider = friends[j].provider;
+													req[j].photo_url = friends[j].photo_url;
+													req[j].name = friends[j].name;
+													req[j].request = true;
+													var location = JSON.parse(result[i].location);
+													req[j].echo = {"echo":"You have received an echo request from \"" + friends[j].name + "\"", "lat":location.lat, "lng":location.lng, "time":result[i].timestamp};
+												} else {
+													req[j] = {};
+												}
+											}
+										}
+									}
+
+									for(var j = 0; j < friends.length; j++){
+										if(req[j] && req[j].social_id){
+											for(var i = echos.length - 1; i >= 0; i--){
+												if(echos[i].social_id == req[j].social_id){
+													echos.splice(i, 1);
+													echos.push(req[j]);
+													break;
+												}
+											}
+										}
+									}
+
+									console.log(echos);
+									return res.json({success: true, echos: echos});
+
+								} else {
+									return res.json({success: true, echos: echos});
+								}
+							}
+						);
+						
 					});				
                 } else {
                     return res.json({ success : false, error : "Not found" });
                 }
             });
         },
+
+		"post#message/get" : function (req, res){
+			var social_id = req.body.social_id,
+				provider = req.body.provider;
+		
+		//	var social_id = req.query.social_id,
+		//		provider = req.query.provider;
+
+			console.log(social_id);
+			console.log(provider);
+
+			var query = socialModel.findOne({$and : [{social_id: social_id}, {provider: provider}]});
+            query.exec(function (err, social) {
+                if (err) {
+                    console.log(err);
+                    return res.json({ success : false, error : "Internal server error" });
+                } else if (social) {
+					if(!social.friends || !social.friends.length){
+						return res.json({success: true, messages: []});
+					}
+
+					socialModel.find({$and : [{social_id: {$in : social.friends}}, {provider: provider}]}).exec(function(err, friends){
+						var messages = [];
+						if(!friends || !friends.length){
+							return res.json({success: true, messages: []});
+						}
+
+						requestModel.find({$or: [{'to_id': social_id}, {'from_id' : social_id}]}).sort({timestamp: 1}).exec(
+							function(err,result) {
+								var req = [];
+								if(result){
+									for(var i = 0; i < result.length; i++){
+										var friend_id = "";
+										if(result[i].from_id == social_id){
+											friend_id = result[i].to_id;
+										} else {
+											friend_id = result[i].from_id;
+										}
+
+										for(var j = 0; j < friends.length; j++){
+											if(!req[j]) req[j] = {};
+											if(friend_id == friends[j].social_id){
+												if(result[i].type == "1" && result[i].to_id == social_id){
+													req[j].from_id = friend_id;
+													req[j].provider = friends[j].provider;
+													req[j].photo_url = friends[j].photo_url;
+													req[j].name = friends[j].name;
+													req[j].text = "You have received an echo request from \"" + friends[j].name + "\"";
+													req[j].timestamp = result[i].timestamp;
+													req[j].is_picture = "NO";
+													req[j].is_received = 1;
+												} else {
+													req[j] = {};
+												}
+											}
+										}
+									}
+
+									console.log('--req');
+									console.log(req);
+									
+									for(var j = 0; j < friends.length; j++){
+										if(req[j] && req[j].from_id){
+											messages.push(req[j]);
+										}
+									}
+								}
+
+								echoModel.find({$or: [{'to_id': social_id}, {'from_id' : social_id}]}).sort({_id: 1}).exec(
+									function(err, echos) {
+										var msgs = [];
+										if(echos){
+											for(var i = 0; i < echos.length; i++){
+												var friend_id = "";
+												if(echos[i].from_id == social_id){
+													friend_id = echos[i].to_id;
+												} else {
+													friend_id = echos[i].from_id;
+												}
+
+												for(var j = 0; j < friends.length; j++){
+													if(!msgs[j]) msgs[j] = {};
+													if(friend_id == friends[j].social_id){
+														if(echos[i].to_id == friend_id || echos[i].from_id == friend_id){
+															msgs[j].from_id = friend_id;
+															msgs[j].provider = friends[j].provider;
+															msgs[j].photo_url = friends[j].photo_url;
+															msgs[j].name = friends[j].name;
+															if(echos[i].is_picture == "YES"){
+																if(friend_id == echos[i].to_id){
+																	msgs[j].text = "You have sent a picture to \"" + friends[j].name + "\"";
+																} else {
+																	msgs[j].text = "You have received a picture from \"" + friends[j].name + "\"";
+																}
+																msgs[j].is_picture = "YES";
+															} else {
+																msgs[j].text = echos[i].text;
+																msgs[j].is_picture = "NO";
+															}
+															msgs[j].timestamp = echos[i].timestamp;
+															if( !msgs[j].is_received ){
+																msgs[j].is_received = 0;
+															}
+															if(echos[i].is_received == "NO"){
+																msgs[j].is_received++;
+															}
+														} else {
+															msgs[j] = {};
+														}
+													}
+												}
+											}
+											
+											for(var j = 0; j < friends.length; j++){
+												if(msgs[j] && msgs[j].from_id){
+													messages.push(msgs[j]);
+												}
+											}
+										}
+
+										console.log('hahaha');
+										console.log(messages);
+										return res.json({success: true, messages: messages});
+								});
+							}
+						);
+						
+					});				
+                } else {
+                    return res.json({ success : false, error : "Not found" });
+                }
+            });
+		},
 
 		"post#echo/delete" : function (req, res) {
             var social_id = req.body.social_id,
@@ -150,6 +365,18 @@ module.exports = function (opts) {
 
 		"get#social/print" : function( req, res) {
 			socialModel.find({}).exec(function( err, socials){
+				res.json({socials: socials});
+			});
+		},
+
+		"get#request/print" : function( req, res) {
+			requestModel.find({}).exec(function( err, socials){
+				res.json({socials: socials});
+			});
+		},
+
+		"get#echo/print" : function( req, res) {
+			echoModel.find({}).exec(function( err, socials){
 				res.json({socials: socials});
 			});
 		}

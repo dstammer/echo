@@ -1,10 +1,9 @@
 module.exports = function (opts) {
     var socialModel = opts.models.Social,
 		requestModel = opts.models.Request,
-		echoModel = opts.models.echo,
+		echoModel = opts.models.Echo,
 		sockets = opts.sockets,
-		async = require('async'),
-		notification = require("../notification.js");
+		async = require('async');
         
     return {
         "getStatus" : function (req) {
@@ -13,15 +12,17 @@ module.exports = function (opts) {
 				to_provider = req.to_provider,
 				to_identifier = req.to_identifier;
                             
-			var query = socialModel.findOne({$and : [{social_id: to_identifier}, {provider: to_provider}]}),
-				to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
+			var query = socialModel.findOne({$and : [{social_id: to_identifier}, {provider: to_provider}]});
             query.exec(function (err, social) {
                 if (err) {
                     console.log(err);
 
+					var to_socket = sockets[to_provider + "_" + to_identifier],
+						my_socket = sockets[provider + "_" + identifier];
                     if(my_socket){
-						my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "Internal Server Error!"}));
+						try{
+							my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "Internal Server Error!"}));
+						} catch(e){}
 					}
                 } else if (social) {
 					var ret = {};
@@ -30,29 +31,51 @@ module.exports = function (opts) {
 					ret.response = "return_status";
 					ret.success = true;
 
-					requestModel.findOne({$and : [{from_id: from_identifer}, {to_id: to_identifier}, {provider: to_provider}]}).sort({ field: -timestamp }).limit(1).exec(function(err, echo_request){
+					requestModel.findOne({$or : [{$and : [{from_id: identifier}, {to_id: to_identifier}, {provider: to_provider}]}, {$and : [{from_id: to_identifier}, {to_id: identifier}, {provider: to_provider}]}]}).sort({timestamp: - 1}).limit(1).exec(function(err, echo_request){
 						if(err){
 							console.log(err);
 
+							var to_socket = sockets[to_provider + "_" + to_identifier],
+								my_socket = sockets[provider + "_" + identifier];
+
 							if(my_socket){
-								my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "Internal Server Error!"}));
+								try{
+									my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "Internal Server Error!"}));
+								} catch(e){}
 							}
 						} else if(echo_request){
+							var to_socket = sockets[to_provider + "_" + to_identifier],
+								my_socket = sockets[provider + "_" + identifier];
+
 							if(my_socket){
 								ret.connection_status = echo_request.type;
-								my_socket.send(JSON.stringify(ret));
+								ret.connection_from = echo_request.from_id;
+								try{
+									my_socket.send(JSON.stringify(ret));
+								} catch(e){}
 							}
 						} else {
+							var to_socket = sockets[to_provider + "_" + to_identifier],
+								my_socket = sockets[provider + "_" + identifier];
+
 							if(my_socket){
 								ret.connection_status = "0";
-								my_socket.send(JSON.stringify(ret));
+								ret.connection_from = "";
+								try{
+									my_socket.send(JSON.stringify(ret));
+								} catch(e){}
 							}
 						}
 					});
 
                 } else {
+					var to_socket = sockets[to_provider + "_" + to_identifier],
+						my_socket = sockets[provider + "_" + identifier];
+
 					if(my_socket){
-						my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "User Not Found!"}));
+						try{
+							my_socket.send(JSON.stringify({"response" : "return_status", "success" : false, "error": "User Not Found!"}));
+						} catch(e){}
 					}
                 }
             });
@@ -65,48 +88,84 @@ module.exports = function (opts) {
 				time = req.timestamp;
 
 			if(time){
-				time = time * 1000;
+				time = time;
 			} else {
 				time = new Date().getTime();
 			}
                             
 			var query = echoModel.find({$and : [{$or : [{$and : [{to_id: to_identifier}, 
-														  {from_id: from_identifier}, 
+														  {from_id: identifier}, 
 														  {provider: to_provider}]},
 														{$and : [{from_id: to_identifier}, 
-														  {to_id: from_identifier}, 
+														  {to_id: identifier}, 
 														  {provider: to_provider}]}
 														]
 												}, 
-												timestamp: {$lt: time}]}).sort({ field: -timestamp }).limit(10),
-				to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
+												{timestamp: {$lt: time}}]}).sort({timestamp: - 1}).limit(10);
 
             query.exec(function (err, echos) {
                 if (err) {
-                    if(my_socket){
-						my_socket.send(JSON.stringify({"response" : "return_previous_messages", "success" : false, "error": "Internal Server Error!"}));
+					var to_socket = sockets[to_provider + "_" + to_identifier],
+						my_socket = sockets[provider + "_" + identifier];
+
+					if(my_socket){
+						try{
+							my_socket.send(JSON.stringify({"response" : "return_previous_messages", "success" : false, "error": "Internal Server Error!"}));
+						} catch(e){}
 					}
                 } else if (echos) {
 					var ret = {};
 
 					ret.response = "return_previous_messages";
 					ret.success = true;
-					ret.messages = echos;
+					ret.messages = [];
+					
+					for(var i = 0; i < echos.length; i++){
+						var msg = {};
+						msg._id = echos[i]._id;
+						msg.from_id = echos[i].from_id;
+						msg.to_id = echos[i].to_id;
+						msg.provider = echos[i].provider;
+						msg.text = echos[i].text;
+						msg.is_picture = echos[i].is_picture;
+						msg.is_received = echos[i].is_received;
+						msg.timestamp = echos[i].timestamp;
+						try{
+							msg.from_color = JSON.parse(echos[i].from_color);
+						} catch(e){
+							msg.from_color = '';
+						}
 
+						try{
+							msg.to_color = JSON.parse(echos[i].to_color);
+						} catch(e){
+							msg.to_color = '';
+						}
+
+						ret.messages.push(msg);
+					}
+
+					var to_socket = sockets[to_provider + "_" + to_identifier],
+						my_socket = sockets[provider + "_" + identifier];
+					
 					if(my_socket){
-						my_socket.send(JSON.stringify(ret));
+						try{
+							my_socket.send(JSON.stringify(ret));
+						} catch(e){}
 					}
 					
-
-					//Function To Save Viewed Status
 					async.each(echos, function (item, callback) {
 						item.is_received = "YES";
 						item.save();
 					}, function(){});
                 } else {
+					var to_socket = sockets[to_provider + "_" + to_identifier],
+						my_socket = sockets[provider + "_" + identifier];
+
 					if(my_socket){
-						my_socket.send(JSON.stringify({"response" : "return_previous_messages", "success" : false, "messages": []}));
+						try{
+							my_socket.send(JSON.stringify({"response" : "return_previous_messages", "success" : false, "messages": []}));
+						} catch(e){}
 					}
                 }
             });
@@ -119,16 +178,13 @@ module.exports = function (opts) {
 				lat = req.lat,
 				lng = req.lng,
 				type = req.type;
-                            
-			var to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
 
             var request = new requestModel();
 
 			request.provider = provider;
 			request.from_id = identifier;
 			request.to_id = to_identifier;
-			request.location = JSON.parse({"lat":lat, "lng": lng});
+			request.location = JSON.stringify({"lat":lat, "lng": lng});
 			request.type = type;
 			request.timestamp = new Date().getTime();
 
@@ -136,13 +192,18 @@ module.exports = function (opts) {
 				if(!nRequest){
 					return;
 				}
+				
+				var to_socket = sockets[to_provider + "_" + to_identifier],
+					my_socket = sockets[provider + "_" + identifier];
 
 				if(to_socket){
-					to_socket.send(JSON.stringify({"response":"echo_request_received", "provider": provider, "from_id": identifier}));
+					try{
+						to_socket.send(JSON.stringify({"response":"echo_request_received", "success": true, "provider": provider, "from_id": identifier, "type": type}));
+					} catch(e){}
 				}
 
 				if(nRequest.type == "1"){
-					var push = require('./notification.js');
+					var push = require('../notification.js');
 					socialModel.findOne({$and : [{social_id: to_identifier}, {provider: to_provider}]}).exec(function(err, social){
 						if(social){
 							push.send(social.device_token, "You have received a new echo request from " + social.name, 1, {}, null);
@@ -157,10 +218,7 @@ module.exports = function (opts) {
 				to_provider = req.to_provider,
 				to_identifier = req.to_identifier,
 				text = req.text;
-                            
-			var to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
-
+                         
             var message = new echoModel();
 
 			message.provider = provider;
@@ -178,11 +236,43 @@ module.exports = function (opts) {
 					return;
 				}
 
-				if(to_socket){
-					to_socket.send(JSON.stringify({"response":"echo_received", "message": nMessage}));
+				var to_socket = sockets[to_provider + "_" + to_identifier],
+					my_socket = sockets[provider + "_" + identifier];
+
+				var msg = {};
+				msg._id = nMessage._id;
+				msg.from_id = nMessage.from_id;
+				msg.to_id = nMessage.to_id;
+				msg.provider = nMessage.provider;
+				msg.text = nMessage.text;
+				msg.is_picture = nMessage.is_picture;
+				msg.is_received = nMessage.is_received;
+				msg.timestamp = nMessage.timestamp;
+				try{
+					msg.from_color = JSON.parse(nMessage.from_color);
+				} catch(e){
+					msg.from_color = '';
 				}
 
-				var push = require('./notification.js');
+				try{
+					msg.to_color = JSON.parse(nMessage.to_color);
+				} catch(e){
+					msg.to_color = '';
+				}
+
+				if(to_socket){
+					try{
+						to_socket.send(JSON.stringify({"response":"echo_received", "success": true, "message": msg}));
+					} catch(e){}
+				}
+
+				if(my_socket){
+					try{
+						my_socket.send(JSON.stringify({"response":"echo_received", "success": true, "message": msg}));
+					} catch(e){}
+				}
+
+				var push = require('../notification.js');
 				socialModel.findOne({$and : [{social_id: to_identifier}, {provider: to_provider}]}).exec(function(err, social){
 					if(social){
 						push.send(social.device_token, "You have received a new echo from " + social.name + ' "' + message.text + '"', 1, {}, null);
@@ -196,9 +286,6 @@ module.exports = function (opts) {
 				to_provider = req.to_provider,
 				to_identifier = req.to_identifier,
 				text = req.text;
-                            
-			var to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
 
             var message = new echoModel();
 
@@ -217,11 +304,21 @@ module.exports = function (opts) {
 					return;
 				}
 
+				var to_socket = sockets[to_provider + "_" + to_identifier],
+					my_socket = sockets[provider + "_" + identifier];
 				if(to_socket){
-					to_socket.send(JSON.stringify({"response":"echo_received", "message": nMessage}));
+					try{
+						to_socket.send(JSON.stringify({"response":"echo_received", "success": true, "message": nMessage}));
+					}catch(e){}
 				}
 
-				var push = require('./notification.js');
+				if(my_socket){
+					try{
+						my_socket.send(JSON.stringify({"response":"echo_received", "success": true, "message": nMessage}));
+					} catch(e){}
+				}
+
+				var push = require('../notification.js');
 				socialModel.findOne({$and : [{social_id: to_identifier}, {provider: to_provider}]}).exec(function(err, social){
 					if(social){
 						push.send(social.device_token, "You have received a new image from " + social.name, 1, {}, null);
@@ -235,9 +332,6 @@ module.exports = function (opts) {
 				to_provider = req.to_provider,
 				to_identifier = req.to_identifier,
 				id = req.id;
-                            
-			var to_socket = sockets[to_provider + "_" + to_identifier],
-				my_socket = sockets[provider + "_" + identifier];
 
             echoModel.findOne({_id: id}).exec(function(err, message){
 				if(message){
@@ -245,8 +339,13 @@ module.exports = function (opts) {
 
 					message.save(function(err, nMessage){
 						if(nMessage){
+							var to_socket = sockets[to_provider + "_" + to_identifier],
+								my_socket = sockets[provider + "_" + identifier];
+
 							if(to_socket){
-								to_socket.send(JSON.stringify({"response":"echo_viewed", "id": id}));
+								try{
+									to_socket.send(JSON.stringify({"response":"echo_viewed", "success": true, "id": id}));
+								} catch(e){}
 							}
 						}
 					});
@@ -267,7 +366,17 @@ module.exports = function (opts) {
 						message.from_color = JSON.stringify(color);
 					}
 
-					message.save();
+					message.save(function(err, nMessage){
+						if(nMessage){
+							var my_socket = sockets[provider + "_" + identifier];
+							console.log(nMessage);
+							if(my_socket){
+								try{
+									my_socket.send(JSON.stringify({"response":"message_color_changed", "success": true, "id": id}));
+								} catch(e){}
+							}
+						}
+					});
 				}
 			});
         },
