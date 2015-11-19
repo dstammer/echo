@@ -363,6 +363,7 @@ module.exports = function (opts) {
         },
 
 		"get#social/print" : function( req, res) {
+			console.log('why not working---');
 			socialModel.find({}).exec(function( err, socials){
 				res.json({socials: socials});
 			});
